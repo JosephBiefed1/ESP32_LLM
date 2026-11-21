@@ -17,9 +17,9 @@ with **PlatformIO** using the **ESP-IDF** framework (not Arduino). The goal is
 on-device inference with the 260 K-parameter `stories260K` model (TinyStories)
 via a llama2.c port, with weights **memory-mapped from flash** and no OTA.
 
-Current state: **M1** — the partition table, model assets, and a temporary
-verification `app_main()` that maps the model and prints its header. The
-inference port is M2.
+Current state: **working demo (M4 done)** — flash-mapped inference, UART
+prompts, and benchmarks. **11.1 tok/s** on 64-token generations at 240 MHz with
+QIO 80 MHz flash. See `README.md#results` for the measured tables.
 
 ## Layout
 
@@ -29,9 +29,11 @@ inference port is M2.
 | `partitions.csv` | Single-app layout + `model` data partition (subtype `0x40`). |
 | `sdkconfig.defaults` | Applied when SDK config is generated (4 MB flash, custom table, `-O2`). |
 | `sdkconfig.esp32dev` | **Generated**, gitignored. Delete it to re-apply `sdkconfig.defaults`. |
-| `src/main.c` | Current entry point (M1 verifier). |
-| `src/CMakeLists.txt` | Registers `src/**/*.c`; `INCLUDE_DIRS "llm"`. |
-| `src/llm/` | llama2.c port (M2) + `tok512.bin` + generated `tok512_blob.h`. |
+| `README.md` | Build instructions and the benchmark/result tables. |
+| `src/main.c` | Entry point: mmap model, prompts, generation loop. |
+| `src/CMakeLists.txt` | Registers `src/**/*.c` and `*.S`; includes `llm/` and `llm/dsp/`. |
+| `src/llm/` | llama2.c port, `tok512.bin`, generated `tok512_blob.h`. |
+| `src/llm/dsp/` | Vendored ESP-DSP `ae32` dot product (benchmark comparison only). |
 | `data/stories260K.bin` | Model weights, 1,056,540 B (committed). |
 | `data/tok512.bin` | Tokenizer, 6,227 B (committed; canonical copy also under `src/llm/`). |
 | `data/SHA256SUMS` | Hashes checked by `scripts/flash_model.sh`. |
@@ -83,13 +85,18 @@ build needs USB. The `model` partition is 64 KiB aligned, so
 - Weights are read through the flash cache; nothing is bulk-copied to RAM.
   This model is **dense**, so every token streams ~1.06 MB (unlike PLE designs
   that keep sparse tables in flash and touch a few rows per token).
-- KV cache is the main RAM cost: `2 × 5 × seq_len × 64 × 4 B`
-  (~82 KB at ctx 32, ~164 KB at ctx 64). Plan: ctx 64 with fallback to 32.
-- Copy RMSNorm vectors (~2.5 KB) into internal SRAM at boot.
-- Worker task stacks: 4 KB each. Yield (`vTaskDelay(1)`) once per token so the
-  task watchdog keeps seeing the idle task on CPU1.
-- `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (`-O2`); add `-ffast-math` for the
-  scalar dot products. Flash is DIO/40 MHz for now; QIO/80 MHz is an M4 test.
+- KV cache is the main RAM cost: `2 × 5 × seq_len × 32 × 4 B` = **81,920 B**
+  at ctx 64. Context is clamped from the trained 512 to **64**; use 32 if a
+  change makes allocations tight.
+- RMSNorm vectors are small and reused every token; they stay in mapped flash.
+- Worker task stacks: 4 KB each (the tasks are not currently started). Yield
+  (`vTaskDelay(1)`) once per token so the watchdog keeps seeing CPU1 idle.
+- `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (`-O2`) plus `-ffast-math`.
+- CPU is **240 MHz**, flash is **QIO 80 MHz** (1.73× faster end-to-end than
+  DIO 40 MHz). The scalar dot kernel beats vendored ESP-DSP `ae32` by 0-10%;
+  ESP-DSP stays only for the benchmark (`-DLLM_USE_ESPDSP=1`).
+- `v4sf` must remain a plain `float`. Its old `aligned(16)` attribute changed
+  the float-argument ABI and intermittently corrupted `Sampler` fields.
 
 ## Conventions
 
@@ -113,6 +120,11 @@ build needs USB. The `model` partition is 64 KiB aligned, so
 - Serial output is 115200 baud; the monitor must use the same speed.
 - If the board does not enter download mode, hold **BOOT** while the upload
   starts.
+- If the board does not boot after enabling QIO 80 MHz, revert to
+  `CONFIG_ESPTOOLPY_FLASHMODE_DIO=y` / `FLASHFREQ_40M` and USB-reflash; not all
+  flash chips tolerate 80 MHz QIO.
+- The demo waits 5 s for a prompt on the UART; type a line then press Enter.
+  `pio device monitor` needs an interactive terminal (pipe input via pyserial).
 - OTA demo is archived, not deleted; it is not compiled.
 
 ## Attribution
@@ -129,4 +141,11 @@ arXiv:2305.07759. Check the upstream licenses before redistributing.
   `model` partition; archived the OTA demo; added `scripts/flash_model.sh`
   and the tokenizer blob generator; M1 verifier in `src/main.c`; `-O2` via
   `CONFIG_COMPILER_OPTIMIZATION_PERF=y`.
+- **2026-11-21 — M2:** ported llama2.c (`src/llm/`), blob-based checkpoint and
+  tokenizer, scalar 4-accumulator dot product, ctx 64, mmap output; fixed the
+  `v4sf aligned(16)` ABI bug that corrupted `Sampler`. Commit `ffe870c`.
+- **2026-11-21 — M3:** UART prompt input with 5 s boot window and `prompt>`
+  loop; 240 MHz CPU; `README.md` result tables.
+- **2026-11-21 — M4:** benchmarked scalar vs vendored ESP-DSP `ae32`
+  (scalar equal/faster) and DIO 40 vs QIO 80 (6.67 → **11.11 tok/s**).
 - **2026-11-21:** `git init` + baseline commit `7086713` (working OTA demo).

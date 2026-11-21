@@ -19,7 +19,7 @@ streamed through the cache during inference.
 - Model file: 1,056,540 B (fp32), flashed once at `0x210000`.
 - Tokenizer: 512-token vocab, 6,227 B, compiled into the app.
 - No `otadata` and no second app slot: updates are USB-only.
-- App image: 178,967 B (8.5% of the 2 MiB partition).
+- App image: 178,891 B (8.5% of the 2 MiB partition).
 
 ## Build, flash, run
 
