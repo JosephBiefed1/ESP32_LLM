@@ -1,7 +1,7 @@
+# Single-app layout for on-device inference: no OTA slots, no otadata.
+# The 260K model is memory-mapped from 'model' (data subtype 0x40) at runtime.
 # Name,   Type, SubType, Offset,   Size, Flags
-# Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap
-nvs,      data, nvs,     ,        0x6000,
-otadata,  data, ota,     ,        0x2000,
-phy_init, data, phy,     ,        0x1000,
-ota_0,    app,  ota_0,   ,        1700K,
-ota_1,    app,  ota_1,   ,        1700K,
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x200000,
+model,    data, 0x40,    0x210000, 0x1f0000,
