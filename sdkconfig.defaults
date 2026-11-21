@@ -2,6 +2,10 @@
 # The board is an ESP32-WROOM-32 module, which has 4 MB of flash.
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
+# Flash read bandwidth is the inference bottleneck: 4 data lines @ 80 MHz.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
 # Single-app layout with a flash-mapped model partition (see partitions.csv).
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
@@ -9,5 +13,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # Inference is scalar float math; -Og would roughly halve throughput.
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# Main task drives generation; worker tasks get 4 KB stacks in code.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+# 240 MHz (default is 160 MHz on this board config).
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+# Main task drives generation, logging and tokenizer parsing.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
