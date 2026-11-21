@@ -82,6 +82,32 @@ Status: `open` · `blocked` · `done`
 - A 32K vocab improves text quality but adds `vocab × dim` embedding and output
   head params, plus a dense softmax per token.
 
+### 15. Logit-reading closed-choice mode (mini-Jev idea) — `open`
+- Instead of generating text, run one forward pass and compare the logits of
+  candidate tokens (e.g. `A`/`B`/`C`, `yes`/`no`, or whole option names).
+- The mini-Jev study (r-ms/mini-jev) shows this matches JSON generation for
+  closed choices on Qwen3-4B, with no decode cost. The useful part here is the
+  **interface**, not the 4B model: one pass (~90 ms) instead of 6–23 s of
+  generation, and no chance of drifting/garbling.
+- On this board: expose `s->logits` from `forward()`, prefill a prompt once
+  (shared KV prefix), then read the scores for N candidate token IDs.
+- Constraints: candidates must exist as tokens in the 512-word vocab; the
+  model is TinyStories-only, so treat it as a toy classifier (story tone,
+  yes/no, A/B/C), not a general instruction model.
+
+### 16. FPGA co-processor — `open`
+- An FPGA can accelerate matmul, but only if it also **owns the weights**.
+  Shipping 1 MB of weights over SPI per token (~10–40 MB/s) would be slower
+  than the current 90 ms/token. Useful split: FPGA holds the model + KV and
+  runs the forward pass; ESP32 does tokenization/UI and sends one activation
+  vector, receiving logits.
+- Requires: FPGA with DSP slices + external SRAM/DDR (or int8 weights in
+  BRAM), SPI slave protocol, RTL matmul/systolic array, and a driver on the
+  ESP32. Weeks-to-months of work; a PSRAM/SIMD MCU or a small SBC is far
+  cheaper for the same result.
+- A 4B model is out of reach on a hobby FPGA: ~2 GB at 4-bit, plus KV, needs
+  large DDR and a high-end device.
+
 ## Hard limits on a bigger model (measured on this board)
 
 | Resource | Value | Consequence |
