@@ -1,0 +1,16 @@
+# Applied when PlatformIO (re)generates sdkconfig.esp32dev.
+# The board is an ESP32-WROOM-32 module, which has 4 MB of flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Two OTA app slots (ota_0 / ota_1) + otadata, see partitions.csv
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Roll back to the previous slot if a new image never confirms itself
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Allow plain http:// for local OTA testing over the LAN
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
+
+# Headroom for Wi-Fi + OTA work in the main task
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
