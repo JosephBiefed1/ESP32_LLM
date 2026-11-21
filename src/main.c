@@ -21,6 +21,8 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 
+#define LLM_GENERATE_TOKENS 256
+
 #include "llm.h"
 #include "tok512_blob.h"
 
@@ -205,13 +207,14 @@ void app_main(void)
     ESP_LOGI(TAG, "type a prompt, or wait 5 s for BOS-only generation");
     int len = read_prompt(prompt, sizeof(prompt), 5000);
     ESP_LOGI(TAG, "generating from %s", len > 0 ? "prompt" : "BOS");
+    /* Sliding-window generation: keep producing past the window size. */
     generate(&transformer, &tokenizer, &sampler, len > 0 ? prompt : NULL,
-             transformer.config.seq_len, generation_done);
+             LLM_GENERATE_TOKENS, generation_done);
 
     while (true) {
         ESP_LOGI(TAG, "prompt>");
         len = read_prompt(prompt, sizeof(prompt), -1);
         generate(&transformer, &tokenizer, &sampler, len > 0 ? prompt : NULL,
-                 transformer.config.seq_len, generation_done);
+                 LLM_GENERATE_TOKENS, generation_done);
     }
 }

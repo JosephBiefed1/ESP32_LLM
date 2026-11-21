@@ -9,12 +9,12 @@ streamed through the cache during inference.
 
 ## Hardware and flash layout
 
-| Partition | Type | Offset | Size |
-| --- | --- | --- | --- |
-| `nvs` | data/nvs | `0x9000` | 24 KiB |
-| `phy_init` | data/phy | `0xf000` | 4 KiB |
-| `factory` | app | `0x10000` | 2 MiB |
-| `model` | data/`0x40` | `0x210000` | 1.9375 MiB |
+| Partition    | Type          | Offset       | Size       |
+| ------------ | ------------- | ------------ | ---------- |
+| `nvs`      | data/nvs      | `0x9000`   | 24 KiB     |
+| `phy_init` | data/phy      | `0xf000`   | 4 KiB      |
+| `factory`  | app           | `0x10000`  | 2 MiB      |
+| `model`    | data/`0x40` | `0x210000` | 1.9375 MiB |
 
 - Model file: 1,056,540 B (fp32), flashed once at `0x210000`.
 - Tokenizer: 512-token vocab, 6,227 B, compiled into the app.
@@ -48,12 +48,12 @@ actual model weights.
 
 ### Kernel: hand-written scalar vs ESP-DSP (ESP32 `ae32` assembly)
 
-| Flash mode | Dot len | Scalar | ESP-DSP | Winner |
-| --- | --- | --- | --- | --- |
-| DIO 40 MHz | 64 (cache-resident) | **1.376 µs** (93 MFLOP/s) | 1.526 µs (84 MFLOP/s) | scalar, 1.10× |
-| DIO 40 MHz | 64, 172 rows (flash-bound) | **25.98 µs** | 26.07 µs | tie |
-| QIO 80 MHz | 64 (cache-resident) | **1.50 µs** (85 MFLOP/s) | 1.53 µs (84 MFLOP/s) | scalar, 1.02× |
-| QIO 80 MHz | 64, 172 rows (flash-bound) | **15.40 µs** | 15.50 µs | tie |
+| Flash mode | Dot len                    | Scalar                           | ESP-DSP                | Winner         |
+| ---------- | -------------------------- | -------------------------------- | ---------------------- | -------------- |
+| DIO 40 MHz | 64 (cache-resident)        | **1.376 µs** (93 MFLOP/s) | 1.526 µs (84 MFLOP/s) | scalar, 1.10× |
+| DIO 40 MHz | 64, 172 rows (flash-bound) | **25.98 µs**              | 26.07 µs              | tie            |
+| QIO 80 MHz | 64 (cache-resident)        | **1.50 µs** (85 MFLOP/s)  | 1.53 µs (84 MFLOP/s)  | scalar, 1.02× |
+| QIO 80 MHz | 64, 172 rows (flash-bound) | **15.40 µs**              | 15.50 µs              | tie            |
 
 End-to-end with ESP-DSP in the matmul: **6.67 tok/s**, identical to the scalar
 build. Conclusion: **ESP-DSP's `dsps_dotprod_f32_ae32` gives no benefit here**;
@@ -63,11 +63,11 @@ ESP-DSP is vendored only for the benchmark (`LLM_USE_ESPDSP=1` switches).
 
 ### Configuration impact (end-to-end)
 
-| Config | tok/s | Relative |
-| --- | --- | --- |
-| 160 MHz, DIO 40 MHz (initial) | 6.42 | 1.00× |
-| 240 MHz, DIO 40 MHz | 6.67 | 1.04× |
-| 240 MHz, QIO 80 MHz | **11.11** | **1.73×** |
+| Config                        | tok/s           | Relative         |
+| ----------------------------- | --------------- | ---------------- |
+| 160 MHz, DIO 40 MHz (initial) | 6.42            | 1.00×           |
+| 240 MHz, DIO 40 MHz           | 6.67            | 1.04×           |
+| 240 MHz, QIO 80 MHz           | **11.11** | **1.73×** |
 
 The CPU clock barely matters; **flash read bandwidth dominates**. Moving from
 2 data lines at 40 MHz to 4 lines at 80 MHz cut the flash-bound dot from
@@ -76,12 +76,12 @@ token streams all ~1 MB of weights from flash.
 
 ### Memory
 
-| Item | Size |
-| --- | --- |
-| Weights (flash-mapped, not RAM) | 1,056,540 B |
-| KV cache (2 × 5 layers × 64 ctx × 32 kv_dim × 4 B) | 81,920 B |
-| Free heap after generation | 176,004 B |
-| Largest free block | 110,592 B |
+| Item                                                   | Size        |
+| ------------------------------------------------------ | ----------- |
+| Weights (flash-mapped, not RAM)                        | 1,056,540 B |
+| KV cache (2 × 5 layers × 64 ctx × 32 kv_dim × 4 B) | 81,920 B    |
+| Free heap after generation                             | 176,004 B   |
+| Largest free block                                     | 110,592 B   |
 
 Context is clamped from the trained 512 to **64** to keep the KV cache inside
 the 320 KiB DRAM. A 32-token context halves that again if needed.

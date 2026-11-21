@@ -23,7 +23,7 @@
 #include <stddef.h>
 
 #ifndef LLM_SEQ_LEN
-#define LLM_SEQ_LEN 64
+#define LLM_SEQ_LEN 128
 #endif
 
 #define MAP_FAILED NULL
@@ -314,11 +314,16 @@ void forward_task(void *params)
                 v4sf *q = t_params->s->q + h * t_params->head_size;
                 // attention scores for this head
                 v4sf *att = t_params->s->att + h * t_params->p->seq_len;
-                // iterate over all timesteps, including the current one
-                for (int t = 0; t <= t_params->pos; t++)
+                // iterate over the sliding window, including the current one
+                int window = t_params->p->seq_len;
+                int first = t_params->pos - window + 1;
+                if (first < 0) first = 0;
+                int count = t_params->pos - first + 1;
+                for (int t = first; t <= t_params->pos; t++)
                 {
+                    int slot = t % window;
                     // get the key vector for this head and at this timestep
-                    v4sf *k = t_params->s->key_cache + t_params->loff + t * t_params->kv_dim + (h / t_params->kv_mul) * t_params->head_size;
+                    v4sf *k = t_params->s->key_cache + t_params->loff + slot * t_params->kv_dim + (h / t_params->kv_mul) * t_params->head_size;
                     // calculate the attention score as the dot product of q and k
                     v4sf score = 0.0f;
                     for (int i = 0; i < t_params->head_size; i++)
@@ -327,21 +332,22 @@ void forward_task(void *params)
                     }
                     score /= sqrtf(t_params->head_size);
                     // save the score to the attention buffer
-                    att[t] = score;
+                    att[t - first] = score;
                 }
 
                 // softmax the scores to get attention weights, from 0..pos inclusively
-                softmax(att, t_params->pos + 1);
+                softmax(att, count);
 
                 // weighted sum of the values, store back into xb
                 v4sf *xb = t_params->s->xb + h * t_params->head_size;
                 memset(xb, 0, t_params->head_size * sizeof(v4sf));
-                for (int t = 0; t <= t_params->pos; t++)
+                for (int t = first; t <= t_params->pos; t++)
                 {
+                    int slot = t % window;
                     // get the value vector for this head and at this timestep
-                    v4sf *v = t_params->s->value_cache + t_params->loff + t * t_params->kv_dim + (h / t_params->kv_mul) * t_params->head_size;
+                    v4sf *v = t_params->s->value_cache + t_params->loff + slot * t_params->kv_dim + (h / t_params->kv_mul) * t_params->head_size;
                     // get the attention weight for this timestep
-                    v4sf a = att[t];
+                    v4sf a = att[t - first];
                     // accumulate the weighted value into xb
                     for (int i = 0; i < t_params->head_size; i++)
                     {
@@ -431,9 +437,11 @@ v4sf *forward(Transformer *transformer, int token, int pos)
         rmsnorm(s->xb, x, w->rms_att_weight + l * dim, dim);
 
         // key and value point to the kv cache
-        int loff = l * p->seq_len * kv_dim; // kv cache layer offset for convenience
-        s->k = s->key_cache + loff + pos * kv_dim;
-        s->v = s->value_cache + loff + pos * kv_dim;
+        int window = p->seq_len;
+        int kv_slot = pos % window; // ring buffer slot for the new K/V
+        int loff = l * window * kv_dim; // kv cache layer offset for convenience
+        s->k = s->key_cache + loff + kv_slot * kv_dim;
+        s->v = s->value_cache + loff + kv_slot * kv_dim;
 
         // qkv matmuls for this position
         matmul(s->q, s->xb, w->wq + l * dim * dim, dim, dim);
@@ -468,11 +476,15 @@ v4sf *forward(Transformer *transformer, int token, int pos)
             v4sf *q = s->q + h * head_size;
             // attention scores for this head
             v4sf *att = s->att + h * p->seq_len;
-            // iterate over all timesteps, including the current one
-            for (int t = 0; t <= pos; t++)
+            // sliding window: attend to the newest `window` positions only
+            int first = pos - window + 1;
+            if (first < 0) first = 0;
+            int count = pos - first + 1;
+            for (int t = first; t <= pos; t++)
             {
+                int slot = t % window;
                 // get the key vector for this head and at this timestep
-                v4sf *k = s->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
+                v4sf *k = s->key_cache + loff + slot * kv_dim + (h / kv_mul) * head_size;
                 // calculate the attention score as the dot product of q and k
                 v4sf score = 0.0f;
                 for (int i = 0; i < head_size; i++)
@@ -480,22 +492,23 @@ v4sf *forward(Transformer *transformer, int token, int pos)
                     score += q[i] * k[i];
                 }
                 score /= sqrtf(head_size);
-                // save the score to the attention buffer
-                att[t] = score;
+                // save the score to the attention buffer (window-relative)
+                att[t - first] = score;
             }
 
             // softmax the scores to get attention weights, from 0..pos inclusively
-            softmax(att, pos + 1);
+            softmax(att, count);
 
             // weighted sum of the values, store back into xb
             v4sf *xb = s->xb + h * head_size;
             memset(xb, 0, head_size * sizeof(v4sf));
-            for (int t = 0; t <= pos; t++)
+            for (int t = first; t <= pos; t++)
             {
+                int slot = t % window;
                 // get the value vector for this head and at this timestep
-                v4sf *v = s->value_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
+                v4sf *v = s->value_cache + loff + slot * kv_dim + (h / kv_mul) * head_size;
                 // get the attention weight for this timestep
-                v4sf a = att[t];
+                v4sf a = att[t - first];
                 // accumulate the weighted value into xb
                 for (int i = 0; i < head_size; i++)
                 {

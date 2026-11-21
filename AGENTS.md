@@ -30,6 +30,7 @@ QIO 80 MHz flash. See `README.md#results` for the measured tables.
 | `sdkconfig.defaults` | Applied when SDK config is generated (4 MB flash, custom table, `-O2`). |
 | `sdkconfig.esp32dev` | **Generated**, gitignored. Delete it to re-apply `sdkconfig.defaults`. |
 | `README.md` | Build instructions and the benchmark/result tables. |
+| `IDEAS.md` | Deferred work and hard limits; read before proposing features. |
 | `src/main.c` | Entry point: mmap model, prompts, generation loop. |
 | `src/CMakeLists.txt` | Registers `src/**/*.c` and `*.S`; includes `llm/` and `llm/dsp/`. |
 | `src/llm/` | llama2.c port, `tok512.bin`, generated `tok512_blob.h`. |
